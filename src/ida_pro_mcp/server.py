@@ -94,6 +94,22 @@ def dispatch_proxy(request: dict | str | bytes | bytearray) -> JsonRpcResponse |
 mcp.registry.dispatch = dispatch_proxy
 
 
+def _fetch_ida_name(host: str, port: int) -> str | None:
+    """Try to fetch the server name from IDA's /info endpoint."""
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=2)
+        try:
+            conn.request("GET", "/info")
+            response = conn.getresponse()
+            if response.status == 200:
+                data = json.loads(response.read())
+                return data.get("name") or None
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
 def main():
     global IDA_HOST, IDA_PORT
 
@@ -191,6 +207,11 @@ def main():
     if args.config:
         print_mcp_config()
         return
+
+    # Try to fetch server name from IDA and use it as our identity
+    ida_name = _fetch_ida_name(IDA_HOST, IDA_PORT)
+    if ida_name:
+        mcp.name = ida_name
 
     try:
         transport = args.transport or "stdio"

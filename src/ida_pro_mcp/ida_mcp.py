@@ -143,22 +143,33 @@ class MCP(idaapi.plugin_t):
         # HACK: ensure fresh load of ida_mcp package
         unload_package("ida_mcp")
         if TYPE_CHECKING:
-            from .ida_mcp import MCP_SERVER, IdaMcpHttpRequestHandler, init_caches
+            from .ida_mcp import MCP_SERVER, IdaMcpHttpRequestHandler, init_caches, get_server_name
         else:
-            from ida_mcp import MCP_SERVER, IdaMcpHttpRequestHandler, init_caches
+            from ida_mcp import MCP_SERVER, IdaMcpHttpRequestHandler, init_caches, get_server_name
 
         try:
             init_caches()
         except Exception as e:
             print(f"[MCP] Cache init failed: {e}")
 
-        port = self.port
+        # Derive server name and port from the currently open binary
+        binary_name = idaapi.get_root_filename() or ""
+        if binary_name:
+            import hashlib
+            port_offset = int(hashlib.sha256(binary_name.encode()).hexdigest()[:4], 16) % 1000
+            start_port = self.DEFAULT_PORT + port_offset
+            MCP_SERVER.name = get_server_name(binary_name)
+        else:
+            start_port = self.port
+
+        port = start_port
         max_port = port + 100
         while port < max_port:
             try:
                 MCP_SERVER.serve(
                     self.host, port, request_handler=IdaMcpHttpRequestHandler
                 )
+                print(f"  Name:   {MCP_SERVER.name}")
                 print(f"  Config: http://{self.host}:{port}/config.html")
                 self.mcp = MCP_SERVER
                 return
@@ -167,7 +178,7 @@ class MCP(idaapi.plugin_t):
                     port += 1
                 else:
                     raise
-        print(f"[MCP] Error: No available port in range {self.port}-{max_port - 1}")
+        print(f"[MCP] Error: No available port in range {start_port}-{max_port - 1}")
 
     def term(self):
         if hasattr(self, "_ui_hooks"):

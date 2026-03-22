@@ -64,6 +64,19 @@ def handle_enabled_tools(registry: McpRpcRegistry, config_key: str):
     return original_tools
 
 
+BINARY_NAME_MAP: dict[str, str] = {
+    "Mafia II MacOS": "mafia2-x86-ida-pro-mcp",
+    "Mafia II Definitive Edition.exe": "mafia2-x64-ida-pro-mcp",
+}
+
+
+def get_server_name(binary_name: str) -> str:
+    """Return MCP server name for the given binary filename."""
+    if not binary_name:
+        return "ida-pro-mcp"
+    return BINARY_NAME_MAP.get(binary_name, "ida-pro-mcp")
+
+
 DEFAULT_CORS_POLICY = "local"
 
 
@@ -117,6 +130,10 @@ class IdaMcpHttpRequestHandler(McpHttpRequestHandler):
             self._handle_config_get()
             return
 
+        if path == "/info":
+            self._handle_info_get()
+            return
+
         # Handle output download requests
         output_match = re.match(r"^/output/([a-f0-9-]+)\.(\w+)$", path)
         if output_match:
@@ -124,6 +141,18 @@ class IdaMcpHttpRequestHandler(McpHttpRequestHandler):
             return
 
         super().do_GET()
+
+    def _handle_info_get(self):
+        """Returns server name and binary info as JSON."""
+        import idaapi
+        binary = idaapi.get_root_filename() or ""
+        name = get_server_name(binary)
+        body = json.dumps({"name": name, "binary": binary}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _handle_output_download(self, output_id: str, extension: str):
         """Handle download of cached output data."""
